@@ -14,21 +14,30 @@ tutorial.
 
 The code for this tutorial consists of two parts:
 
-* A Python file, [mnist_saved_model.py](https://github.com/tensorflow/serving/tree/master/tensorflow_serving/example/mnist_saved_model.py),
-that trains and exports the model.
+*   A Python file,
+    [mnist_saved_model.py](https://github.com/tensorflow/serving/tree/master/tensorflow_serving/example/mnist_saved_model.py),
+    that trains and exports the model.
 
-* A C++ file, [main.cc](https://github.com/tensorflow/serving/tree/master/tensorflow_serving/model_servers/main.cc),
-which is the standard TensorFlow model server that discovers new exported
-models and runs a [gRPC](http://www.grpc.io) service for serving them.
+*   A ModelServer binary which can be either installed using apt-get, or
+    compiled from a C++ file
+    ([main.cc](https://github.com/tensorflow/serving/tree/master/tensorflow_serving/model_servers/main.cc)).
+    The TensorFlow Serving ModelServer discovers new exported models and runs a
+    [gRPC](http://www.grpc.io) service for serving them.
 
-Before getting started, please complete the [prerequisites](setup.md#prerequisites).
+Before getting started, please complete the
+[prerequisites](setup.md#prerequisites).
+
+Note: All `bazel build` commands below use the standard `-c opt` flag. To
+further optimize the build, refer to the [instructions
+here](setup.md#optimized).
 
 ## Train And Export TensorFlow Model
 
 As you can see in `mnist_saved_model.py`, the training is done the same way it
-is in the MNIST For ML Beginners tutorial. The TensorFlow graph is launched in
-TensorFlow session `sess`, with the input tensor (image) as `x` and output
-tensor (Softmax score) as `y`.
+is in the
+[MNIST For ML Beginners tutorial](https://www.tensorflow.org/get_started/mnist/beginners).
+The TensorFlow graph is launched in TensorFlow session `sess`, with the input
+tensor (image) as `x` and output tensor (Softmax score) as `y`.
 
 Then we use TensorFlow's [SavedModelBuilder module](https://github.com/tensorflow/tensorflow/blob/master/tensorflow/python/saved_model/builder.py)
 to export the model. `SavedModelBuilder` saves a "snapshot" of the trained model
@@ -41,15 +50,13 @@ From [mnist_saved_model.py](https://github.com/tensorflow/serving/tree/master/te
 the following is a short code snippet to illustrate the general process of
 saving a model to disk.
 
-~~~python
-from tensorflow.python.saved_model import builder as saved_model_builder
-...
+```python
 export_path_base = sys.argv[-1]
 export_path = os.path.join(
       compat.as_bytes(export_path_base),
       compat.as_bytes(str(FLAGS.model_version)))
 print 'Exporting trained model to', export_path
-builder = saved_model_builder.SavedModelBuilder(export_path)
+builder = tf.saved_model.builder.SavedModelBuilder(export_path)
 builder.add_meta_graph_and_variables(
       sess, [tag_constants.SERVING],
       signature_def_map={
@@ -60,7 +67,7 @@ builder.add_meta_graph_and_variables(
       },
       legacy_init_op=legacy_init_op)
 builder.save()
-~~~
+```
 
 `SavedModelBuilder.__init__` takes the following argument:
 
@@ -82,7 +89,7 @@ You can add meta graph and variables to the builder using
 * `tags` is the set of tags with which to save the meta graph. In this case,
   since we intend to use the graph in serving, we use the `serve` tag from
   predefined SavedModel tag constants. For more details, see [tag_constants.py](https://github.com/tensorflow/tensorflow/blob/master/tensorflow/python/saved_model/tag_constants.py)
-  and [related TensorFlow 1.0 API documentation](https://www.tensorflow.org/api_docs/python/tf/saved_model/tag_constants).
+  and [related TensorFlow API documentation](https://www.tensorflow.org/api_docs/python/tf/saved_model/tag_constants).
 
 * `signature_def_map` specifies the map of user-supplied key for a
   **signature** to a tensorflow::SignatureDef to add to the meta graph.
@@ -104,46 +111,56 @@ You can add meta graph and variables to the builder using
   As an example for how `predict_signature` is defined, the util takes the
   following arguments:
 
-    * `inputs={'images': tensor_info_x}` specifies the input tensor info.
+  * `inputs={'images': tensor_info_x}` specifies the input tensor info.
 
-    * `outputs={'scores': tensor_info_y}` specifies the scores tensor info.
+  * `outputs={'scores': tensor_info_y}` specifies the scores tensor info.
 
-      Note that `tensor_info_x` and `tensor_info_y` have the structure of
-      `tensorflow::TensorInfo` protocol buffer defined [here](https://github.com/tensorflow/tensorflow/blob/master/tensorflow/core/protobuf/meta_graph.proto).
-      To easily build tensor infos, the TensorFlow SavedModel API also provides
-      [utils.py](https://github.com/tensorflow/tensorflow/blob/master/tensorflow/python/saved_model/utils.py),
-      with [related TensorFlow 1.0 API documentation](https://www.tensorflow.org/api_docs/python/tf/saved_model/utils).
+  * `method_name` is the method used for the inference. For Prediction
+     requests, it should be set to `tensorflow/serving/predict`. For other
+     method names, see [signature_constants.py](https://github.com/tensorflow/tensorflow/blob/master/tensorflow/python/saved_model/signature_constants.py)
+     and related [TensorFlow 1.0 API documentation](https://www.tensorflow.org/api_docs/python/tf/saved_model/signature_constants).
 
-      Also, note that `images` and `scores` are tensor alias names. They can be
-      whatever unique strings you want, and they will become the logical names
-      of tensor `x` and `y` that you refer to for tensor binding when sending
-      prediction requests later.
 
-      For instance, if `x` refers to the tensor with name 'long_tensor_name_foo'
-      and `y` refers to the tensor with name 'generated_tensor_name_bar',
-      `builder` will store tensor logical name to real name mapping
-      ('images' -> 'long_tensor_name_foo') and ('scores' -> 'generated_tensor_name_bar').
-      This allows the user to refer to these tensors with their logical names
-      when running inference.
+Note that `tensor_info_x` and `tensor_info_y` have the structure of
+`tensorflow::TensorInfo` protocol buffer defined [here](https://github.com/tensorflow/tensorflow/blob/master/tensorflow/core/protobuf/meta_graph.proto).
+To easily build tensor infos, the TensorFlow SavedModel API also provides
+[utils.py](https://github.com/tensorflow/tensorflow/blob/master/tensorflow/python/saved_model/utils.py),
+with [related TensorFlow 1.0 API documentation](https://www.tensorflow.org/api_docs/python/tf/saved_model/utils).
 
-    * `method_name` is the method used for the inference. For Prediction
-      requests, it should be set to `tensorflow/serving/predict`. For other
-      method names, see [signature_constants.py](https://github.com/tensorflow/tensorflow/blob/master/tensorflow/python/saved_model/signature_constants.py)
-      and related [TensorFlow 1.0 API documentation](https://www.tensorflow.org/api_docs/python/tf/saved_model/signature_constants).
+Also, note that `images` and `scores` are tensor alias names. They can be
+whatever unique strings you want, and they will become the logical names
+of tensor `x` and `y` that you refer to for tensor binding when sending
+prediction requests later.
 
-  In addition to the description above, documentation related to signature def
-  structure and how to set up them up can be found [here](https://github.com/tensorflow/serving/blob/master/tensorflow_serving/g3doc/signature_defs.md).
+For instance, if `x` refers to the tensor with name 'long_tensor_name_foo' and
+`y` refers to the tensor with name 'generated_tensor_name_bar', `builder` will
+store tensor logical name to real name mapping ('images' ->
+'long_tensor_name_foo') and ('scores' -> 'generated_tensor_name_bar').  This
+allows the user to refer to these tensors with their logical names when
+running inference.
+
+Note: In addition to the description above, documentation related to signature
+def structure and how to set up them up can be found [here](signature_defs.md).
 
 Let's run it!
 
 Clear the export directory if it already exists:
 
-~~~shell
+```shell
 $>rm -rf /tmp/mnist_model
-~~~
+```
 
-~~~shell
-$>bazel build //tensorflow_serving/example:mnist_saved_model
+If you would like to install the `tensorflow` and `tensorflow-serving-api` PIP
+packages, you can run all Python code (export and client) using a simple
+`python` command. To install the PIP package, follow the [instructions
+here](setup.md#pip). It's also possible to use Bazel to build the necessary
+dependencies and run all code without installing those packages. The rest of the
+codelab will have instructions for both the Bazel and PIP options.
+
+Bazel:
+
+```shell
+$>bazel build -c opt //tensorflow_serving/example:mnist_saved_model
 $>bazel-bin/tensorflow_serving/example/mnist_saved_model /tmp/mnist_model
 Training model...
 
@@ -152,23 +169,29 @@ Training model...
 Done training!
 Exporting trained model to /tmp/mnist_model
 Done exporting!
-~~~
+```
+
+Or if you have `tensorflow-serving-api` installed, you can run:
+
+```shell
+python tensorflow_serving/example/mnist_saved_model.py /tmp/mnist_model
+```
 
 Now let's take a look at the export directory.
 
-~~~shell
+```shell
 $>ls /tmp/mnist_model
 1
-~~~
+```
 
 As mentioned above, a sub-directory will be created for exporting each version
 of the model. `FLAGS.model_version` has the default value of 1, therefore
 the corresponding sub-directory `1` is created.
 
-~~~shell
+```shell
 $>ls /tmp/mnist_model/1
 saved_model.pb variables
-~~~
+```
 
 Each version sub-directory contains the following files:
 
@@ -180,27 +203,44 @@ Each version sub-directory contains the following files:
 
 With that, your TensorFlow model is exported and ready to be loaded!
 
-## Load Exported Model With Standard TensorFlow Model Server
+## Load Exported Model With Standard TensorFlow ModelServer
 
-~~~shell
-$>bazel build //tensorflow_serving/model_servers:tensorflow_model_server
+If you'd like to use a locally compiled ModelServer, run the following:
+
+```shell
+$>bazel build -c opt //tensorflow_serving/model_servers:tensorflow_model_server
 $>bazel-bin/tensorflow_serving/model_servers/tensorflow_model_server --port=9000 --model_name=mnist --model_base_path=/tmp/mnist_model/
-~~~
+```
+
+If you'd prefer to skip compilation and install using apt-get, follow the
+[instructions here](setup.md#aptget). Then run the server with the following
+command:
+
+```shell
+tensorflow_model_server --port=9000 --model_name=mnist --model_base_path=/tmp/mnist_model/
+```
 
 ## Test The Server
 
-We can use the provided [mnist_client](https://github.com/tensorflow/serving/tree/master/tensorflow_serving/example/mnist_client.py) utility
-to test the server. The client downloads MNIST test data, sends them as
+We can use the provided
+[mnist_client](https://github.com/tensorflow/serving/tree/master/tensorflow_serving/example/mnist_client.py)
+utility to test the server. The client downloads MNIST test data, sends them as
 requests to the server, and calculates the inference error rate.
 
-To run it:
+To run it with Bazel:
 
-~~~shell
-$>bazel build //tensorflow_serving/example:mnist_client
+```shell
+$>bazel build -c opt //tensorflow_serving/example:mnist_client
 $>bazel-bin/tensorflow_serving/example/mnist_client --num_tests=1000 --server=localhost:9000
 ...
 Inference error rate: 10.5%
-~~~
+```
+
+Alternatively if you installed the PIP package, run:
+
+```shell
+python tensorflow_serving/example/mnist_client.py --num_tests=1000 --server=localhost:9000
+```
 
 We expect around 91% accuracy for the trained Softmax model and we get
 10.5% inference error rate for the first 1000 test images. This confirms that

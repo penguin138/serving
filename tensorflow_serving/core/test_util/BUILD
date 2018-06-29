@@ -26,8 +26,9 @@ cc_library(
     testonly = 1,
     srcs = ["test_main.cc"],
     linkopts = ["-lm"],
+    tags = ["keep_dep"],  # Tell build_cleaner to keep dependencies on this.
     deps = [
-        "//external:gtest",
+        "@com_google_googletest//:gtest",
         "@org_tensorflow//tensorflow/core:testlib",
     ],
 )
@@ -37,9 +38,9 @@ cc_library(
     testonly = 1,
     hdrs = ["mock_loader.h"],
     deps = [
-        "//external:gtest",
         "//tensorflow_serving/core:loader",
         "//tensorflow_serving/util:any_ptr",
+        "@com_google_googletest//:gtest",
         "@org_tensorflow//tensorflow/core:lib",
     ],
 )
@@ -100,9 +101,9 @@ cc_library(
     testonly = 1,
     hdrs = ["mock_storage_path_target.h"],
     deps = [
-        "//external:gtest",
         "//tensorflow_serving/core:storage_path",
         "//tensorflow_serving/core:target",
+        "@com_google_googletest//:gtest",
         "@org_tensorflow//tensorflow/core:lib",
     ],
 )
@@ -114,8 +115,8 @@ cc_library(
     hdrs = ["availability_test_util.h"],
     visibility = ["//visibility:public"],
     deps = [
-        "//external:gtest",
         "//tensorflow_serving/core:servable_state_monitor",
+        "@com_google_googletest//:gtest",
         "@org_tensorflow//tensorflow/core:lib",
     ],
 )
@@ -150,10 +151,10 @@ cc_library(
     hdrs = ["mock_log_collector.h"],
     visibility = ["//visibility:public"],
     deps = [
-        "//external:gtest",
         "//tensorflow_serving/core:log_collector",
+        "@com_google_googletest//:gtest",
         "@org_tensorflow//tensorflow/core:lib",
-        "@protobuf//:protobuf",
+        "@protobuf_archive//:protobuf",
     ],
 )
 
@@ -162,10 +163,10 @@ cc_library(
     testonly = 1,
     hdrs = ["fake_log_collector.h"],
     deps = [
-        "//external:gtest",
         "//tensorflow_serving/core:log_collector",
+        "@com_google_googletest//:gtest",
         "@org_tensorflow//tensorflow/core:lib",
-        "@protobuf//:protobuf",
+        "@protobuf_archive//:protobuf",
     ],
 )
 
@@ -174,11 +175,22 @@ cc_library(
     testonly = 1,
     hdrs = ["mock_request_logger.h"],
     deps = [
-        "//external:gtest",
         "//tensorflow_serving/core:logging_proto",
         "//tensorflow_serving/core:request_logger",
+        "@com_google_googletest//:gtest",
         "@org_tensorflow//tensorflow/core:lib",
-        "@protobuf//:protobuf",
+        "@protobuf_archive//:protobuf",
+    ],
+)
+
+cc_library(
+    name = "mock_server_request_logger",
+    testonly = 1,
+    hdrs = ["mock_server_request_logger.h"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//tensorflow_serving/core:server_request_logger",
+        "@com_google_googletest//:gtest",
     ],
 )
 
@@ -187,7 +199,7 @@ cc_library(
     testonly = 1,
     hdrs = ["mock_session.h"],
     deps = [
-        "//external:gtest",
+        "@com_google_googletest//:gtest",
         "@org_tensorflow//tensorflow/core:core_cpu",
         "@org_tensorflow//tensorflow/core:lib",
     ],

@@ -156,7 +156,10 @@ Status AspiredVersionsManager::Create(
   basic_manager_options.max_num_load_retries = options.max_num_load_retries;
   basic_manager_options.load_retry_interval_micros =
       options.load_retry_interval_micros;
+  basic_manager_options.flush_filesystem_caches =
+      options.flush_filesystem_caches;
   basic_manager_options.servable_event_bus = options.servable_event_bus;
+  basic_manager_options.pre_load_hook = std::move(options.pre_load_hook);
   std::unique_ptr<BasicManager> basic_manager;
   TF_RETURN_IF_ERROR(
       BasicManager::Create(std::move(basic_manager_options), &basic_manager));
@@ -174,6 +177,10 @@ AspiredVersionsManager::AspiredVersionsManager(
     : aspired_version_policy_(std::move(aspired_version_policy)),
       target_impl_(new internal::AspiredVersionsManagerTargetImpl(this)),
       basic_manager_(std::move(basic_manager)) {
+  set_num_load_threads_observer_.reset(
+      new Observer<const uint32>([this](const uint32 num_load_threads) {
+        this->SetNumLoadThreads(num_load_threads);
+      }));
   if (manage_state_interval_micros > 0) {
     PeriodicFunction::Options pf_options;
     pf_options.env = env;
@@ -233,7 +240,7 @@ void AspiredVersionsManager::EnqueueAspiredVersionsRequest(
     mutex_lock l(pending_aspired_versions_requests_mu_);
     VLOG(1) << "Enqueueing aspired versions request: "
             << ServableVersionsDebugString(versions);
-    pending_aspired_versions_requests_[servable_name.ToString()] =
+    pending_aspired_versions_requests_[std::string(servable_name)] =
         std::move(versions);
   }
 }
@@ -253,7 +260,7 @@ void AspiredVersionsManager::ProcessAspiredVersionsRequest(
   std::set<int64> current_aspired_versions;
   const std::vector<ServableStateSnapshot<Aspired>> state_snapshots =
       basic_manager_->GetManagedServableStateSnapshots<Aspired>(
-          servable_name.ToString());
+          std::string(servable_name));
   for (const ServableStateSnapshot<Aspired> state_snapshot : state_snapshots) {
     if (state_snapshot.additional_state->is_aspired) {
       current_aspired_versions.insert(state_snapshot.id.version);
@@ -283,7 +290,7 @@ void AspiredVersionsManager::ProcessAspiredVersionsRequest(
     // if this aspired version is not already present in the map.
     if (std::find(additions.begin(), additions.end(), version.id().version) !=
         additions.end()) {
-      VLOG(1) << "Adding " << version.id() << "to BasicManager";
+      VLOG(1) << "Adding " << version.id() << " to BasicManager";
       const Status manage_status =
           basic_manager_->ManageServableWithAdditionalState(
               std::move(version), std::unique_ptr<Aspired>(new Aspired{true}));
@@ -302,7 +309,7 @@ bool AspiredVersionsManager::ContainsAnyReaspiredVersions(
     const std::vector<ServableData<std::unique_ptr<Loader>>>& versions) const {
   const std::vector<ServableStateSnapshot<Aspired>> state_snapshots =
       basic_manager_->GetManagedServableStateSnapshots<Aspired>(
-          servable_name.ToString());
+          std::string(servable_name));
   const std::set<int64> version_numbers = GetVersionNumbers(versions);
   for (const ServableStateSnapshot<Aspired>& state_snapshot : state_snapshots) {
     if (!state_snapshot.additional_state->is_aspired &&

@@ -39,9 +39,10 @@ namespace serving {
 /// data of type InputType and converts them into calls with data of type
 /// OutputType.
 ///
-/// A common example uses InputType=StoragePath, OutputType=unique_ptr<Loader>,
-/// in which case the module "converts" each incoming storage path into a loader
-/// capable of loading a (particular type of) servable based on the path.
+/// A common example uses InputType=StoragePath,
+/// OutputType=unique_ptr&amp;lt;Loader>, in which case the module "converts"
+/// each incoming storage path into a loader capable of loading a (particular
+/// type of) servable based on the path.
 ///
 /// SourceAdapters are typically stateless. However, as with all Sources they
 /// can house state that is shared among multiple emitted servables. See the
@@ -88,6 +89,8 @@ class SourceAdapter : public TargetBase<InputType>, public Source<OutputType> {
   // to propagate aspired versions?
   Notification outgoing_callback_set_;
 };
+
+// START_SKIP_DOXYGEN
 
 // Define a SourceAdapter registry for the common case of adapting from a
 // storage path to a loader.
@@ -255,6 +258,8 @@ ErrorInjectingSourceAdapter<InputType, OutputType>::Adapt(
   }
   return adapted_versions;
 }
+
+// END_SKIP_DOXYGEN
 
 }  // namespace serving
 }  // namespace tensorflow

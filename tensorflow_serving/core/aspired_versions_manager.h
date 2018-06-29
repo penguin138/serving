@@ -33,10 +33,13 @@ limitations under the License.
 #include "tensorflow_serving/core/basic_manager.h"
 #include "tensorflow_serving/core/loader.h"
 #include "tensorflow_serving/core/manager.h"
+#include "tensorflow_serving/core/servable_data.h"
 #include "tensorflow_serving/core/servable_handle.h"
 #include "tensorflow_serving/core/servable_id.h"
 #include "tensorflow_serving/core/servable_state.h"
 #include "tensorflow_serving/core/target.h"
+#include "tensorflow_serving/util/event_bus.h"
+#include "tensorflow_serving/util/observer.h"
 #include "tensorflow_serving/util/optional.h"
 
 namespace tensorflow {
@@ -48,9 +51,13 @@ namespace internal {
 
 class AspiredVersionsManagerTargetImpl;
 
-Status ConnectSourceWithFastInitialLoad(
-    AspiredVersionsManager* manager, Source<std::unique_ptr<Loader>>* source,
-    const std::function<Status()>& wait_until_loaded_fn, uint32 num_threads);
+uint32 GetManagerNumLoadThreads(AspiredVersionsManager* manager);
+
+// Returns the Notifier function of the manager's Observer, which forwards
+// SetNumLoadThreads().  This indirection is to prevent callers from using
+// SetNumLoadThreads() on a deleted manager.
+std::function<void(uint32)> SetManagerNumLoadThreadsNotifier(
+    AspiredVersionsManager* manager);
 
 }  // namespace internal
 
@@ -58,13 +65,13 @@ namespace test_util {
 class AspiredVersionsManagerTestAccess;
 }  // namespace test_util
 
-/// A manager that implements the Target<Loader> API which uses aspired-versions
-/// callbacks to dictate which servable versions to load. This manager also uses
-/// that API to infer which ones to unload: If a given servable version is
-/// currently loaded, and is omitted from an aspired-versions callback
-/// invocation pertaining to its servable stream, this manager interprets that
-/// omission as an implicit instruction to unload the version. See below for
-/// details.
+/// A manager that implements the Target&amp;lt;Loader> API which uses
+/// aspired-versions callbacks to dictate which servable versions to load. This
+/// manager also uses that API to infer which ones to unload: If a given
+/// servable version is currently loaded, and is omitted from an
+/// aspired-versions callback invocation pertaining to its servable stream, this
+/// manager interprets that omission as an implicit instruction to unload the
+/// version. See below for details.
 ///
 /// (The implicit-unload semantics facilitates stateless Source implementations,
 /// whereby a given iteration of the Source's logic simply decides which
@@ -78,6 +85,8 @@ class AspiredVersionsManagerTestAccess;
 class AspiredVersionsManager : public Manager,
                                public Target<std::unique_ptr<Loader>> {
  public:
+  using PreLoadHook = BasicManager::PreLoadHook;
+
   /// Config options and pluggable objects that will be used by the
   /// AspiredVersionsManager.
   struct Options {
@@ -118,9 +127,19 @@ class AspiredVersionsManager : public Manager,
     /// Default: 1 minute.
     int64 load_retry_interval_micros = 1LL * 60 * 1000 * 1000;
 
+    // If true, and there are not multiple load threads, filesystem caches will
+    // be flushed after each servable is loaded. (Cache flush is skipped when
+    // multiple load threads are active, in order to avoid setting back a
+    // concurrent load on another thread.)
+    bool flush_filesystem_caches = false;
+
     /// The environment to use for starting threads in the thread-pool or for
     /// sleeping.
     Env* env = Env::Default();
+
+    /// Callback to be called just before a servable is to be loaded. This will
+    /// called on the same manager load thread which starts the load.
+    PreLoadHook pre_load_hook;
   };
   static Status Create(Options options,
                        std::unique_ptr<AspiredVersionsManager>* manager);
@@ -189,9 +208,10 @@ class AspiredVersionsManager : public Manager,
   friend class internal::AspiredVersionsManagerTargetImpl;
   friend class test_util::AspiredVersionsManagerTestAccess;
   friend class ServerCore;
-  friend Status internal::ConnectSourceWithFastInitialLoad(
-      AspiredVersionsManager* manager, Source<std::unique_ptr<Loader>>* source,
-      const std::function<Status()>& wait_until_loaded_fn, uint32 num_threads);
+  friend uint32 internal::GetManagerNumLoadThreads(
+      AspiredVersionsManager* manager);
+  friend std::function<void(uint32)> internal::SetManagerNumLoadThreadsNotifier(
+      AspiredVersionsManager* manager);
 
   AspiredVersionsManager(
       int64 manage_state_interval_micros, Env* env,
@@ -290,6 +310,10 @@ class AspiredVersionsManager : public Manager,
 
   // This is where the servables "live" while they are being managed.
   std::unique_ptr<BasicManager> basic_manager_;
+
+  // An observer object that forwards to SetNumLoadThreads(), if not detached.
+  // This is declared last here so that it is deleted before basic_manager_.
+  std::unique_ptr<Observer<const uint32>> set_num_load_threads_observer_;
 
   TF_DISALLOW_COPY_AND_ASSIGN(AspiredVersionsManager);
 };

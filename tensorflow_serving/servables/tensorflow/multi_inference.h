@@ -13,13 +13,13 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#ifndef LEARNING_SERVING_SERVABLES_TENSORFLOW_MULTI_INFERENCE_H_
-#define LEARNING_SERVING_SERVABLES_TENSORFLOW_MULTI_INFERENCE_H_
+#ifndef TENSORFLOW_SERVING_SERVABLES_TENSORFLOW_MULTI_INFERENCE_H_
+#define TENSORFLOW_SERVING_SERVABLES_TENSORFLOW_MULTI_INFERENCE_H_
 
 #include "tensorflow/contrib/session_bundle/session_bundle.h"
 #include "tensorflow/core/lib/core/status.h"
 #include "tensorflow_serving/apis/inference.pb.h"
-#include "tensorflow_serving/model_servers/server_core.h"
+#include "tensorflow_serving/util/optional.h"
 
 namespace tensorflow {
 namespace serving {
@@ -28,8 +28,17 @@ namespace serving {
 // Only supports Models in the SavedModel format.
 class TensorFlowMultiInferenceRunner {
  public:
-  TensorFlowMultiInferenceRunner(Session* session, MetaGraphDef* meta_graph_def)
-      : session_(session), meta_graph_def_(meta_graph_def) {}
+  TensorFlowMultiInferenceRunner(Session* session,
+                                 const MetaGraphDef* meta_graph_def)
+      : TensorFlowMultiInferenceRunner(session, meta_graph_def,
+                                       /*servable_version*/ {}) {}
+
+  TensorFlowMultiInferenceRunner(Session* session,
+                                 const MetaGraphDef* meta_graph_def,
+                                 optional<int64> servable_version)
+      : session_(session),
+        meta_graph_def_(meta_graph_def),
+        servable_version_(servable_version) {}
 
   // Run inference and return the inference results in the same order as the
   // InferenceTasks in the request.
@@ -41,14 +50,20 @@ class TensorFlowMultiInferenceRunner {
 
  private:
   Session* const session_;
-  MetaGraphDef* const meta_graph_def_;
+  const MetaGraphDef* const meta_graph_def_;
+  // If available, servable_version is used to set the ModelSpec version in the
+  // InferenceResults of the MultiInferenceResponse.
+  const optional<int64> servable_version_;
 };
 
-Status RunMultiInference(const RunOptions& run_options, ServerCore* core,
-                         const MultiInferenceRequest& request,
+// Creates TensorFlowMultiInferenceRunner and calls Infer on it.
+Status RunMultiInference(const RunOptions& run_options,
+                         const MetaGraphDef& meta_graph_def,
+                         const optional<int64>& servable_version,
+                         Session* session, const MultiInferenceRequest& request,
                          MultiInferenceResponse* response);
 
 }  // namespace serving
 }  // namespace tensorflow
 
-#endif  // LEARNING_SERVING_SERVABLES_TENSORFLOW_MULTI_INFERENCE_H_
+#endif  // TENSORFLOW_SERVING_SERVABLES_TENSORFLOW_MULTI_INFERENCE_H_

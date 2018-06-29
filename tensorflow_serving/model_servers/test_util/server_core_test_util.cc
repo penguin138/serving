@@ -16,6 +16,7 @@ limitations under the License.
 #include "tensorflow_serving/model_servers/test_util/server_core_test_util.h"
 
 #include "tensorflow/core/lib/core/status_test_util.h"
+#include "tensorflow/core/lib/io/path.h"
 #include "tensorflow_serving/core/availability_preserving_policy.h"
 #include "tensorflow_serving/core/test_util/fake_loader_source_adapter.h"
 #include "tensorflow_serving/model_servers/model_platform_types.h"
@@ -70,10 +71,16 @@ ServerCore::Options GetDefaultOptions(const bool use_saved_model) {
 }  // namespace
 
 Status CreateServerCore(const ModelServerConfig& config,
+                        ServerCore::Options options,
                         std::unique_ptr<ServerCore>* server_core) {
-  ServerCore::Options options = GetDefaultOptions(true /*use_saved_model */);
   options.model_server_config = config;
   return ServerCore::Create(std::move(options), server_core);
+}
+
+Status CreateServerCore(const ModelServerConfig& config,
+                        std::unique_ptr<ServerCore>* server_core) {
+  return CreateServerCore(config, GetDefaultOptions(true /*use_saved_model */),
+                          server_core);
 }
 
 ModelServerConfig ServerCoreTest::GetTestModelServerConfigForFakePlatform() {
@@ -96,6 +103,9 @@ ServerCoreTest::GetTestModelServerConfigForTensorflowPlatform() {
     model->set_base_path(test_util::TestSrcDirPath(
         "/servables/tensorflow/testdata/half_plus_two"));
   }
+  if (PrefixPathsWithURIScheme()) {
+    model->set_base_path(io::CreateURI("file", "", model->base_path()));
+  }
   model->set_model_platform(kTensorFlowModelPlatform);
   return config;
 }
@@ -106,6 +116,9 @@ void ServerCoreTest::SwitchToHalfPlusTwoWith2Versions(
   auto model = config->mutable_model_config_list()->mutable_config(0);
   model->set_base_path(test_util::TestSrcDirPath(
       "/servables/tensorflow/testdata/half_plus_two_2_versions"));
+  if (PrefixPathsWithURIScheme()) {
+    model->set_base_path(io::CreateURI("file", "", model->base_path()));
+  }
 }
 
 ServerCore::Options ServerCoreTest::GetDefaultOptions() {
@@ -117,8 +130,9 @@ ServerCore::Options ServerCoreTest::GetDefaultOptions() {
 }
 
 Status ServerCoreTest::CreateServerCore(
-    const ModelServerConfig& config, std::unique_ptr<ServerCore>* server_core) {
-  return test_util::CreateServerCore(config, server_core);
+    const ModelServerConfig& config, ServerCore::Options options,
+    std::unique_ptr<ServerCore>* server_core) {
+  return test_util::CreateServerCore(config, std::move(options), server_core);
 }
 
 }  // namespace test_util

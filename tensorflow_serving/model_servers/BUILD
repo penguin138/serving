@@ -9,6 +9,12 @@ package(
 
 licenses(["notice"])  # Apache 2.0
 
+# Visibility group for clients that link in custom ops, while using the
+# vanilla TensorFlow ModelServer without any other modifications. Exclusively
+# for adding custom TensorFlow ops. Does not grant access to private headers
+# or other implementation details.
+package_group(name = "tensorflow_model_server_custom_op_clients")
+
 filegroup(
     name = "all_files",
     srcs = glob(
@@ -54,6 +60,7 @@ cc_library(
     deps = [
         ":model_platform_types",
         "//tensorflow_serving/apis:model_proto",
+        "//tensorflow_serving/config:logging_config_proto",
         "//tensorflow_serving/config:model_server_config_proto",
         "//tensorflow_serving/config:platform_config_proto",
         "//tensorflow_serving/core:aspired_versions_manager",
@@ -71,9 +78,10 @@ cc_library(
         "//tensorflow_serving/sources/storage_path:file_system_storage_path_source",
         "//tensorflow_serving/sources/storage_path:file_system_storage_path_source_proto",
         "//tensorflow_serving/util:event_bus",
+        "//tensorflow_serving/util:optional",
         "//tensorflow_serving/util:unique_ptr_with_deps",
         "@org_tensorflow//tensorflow/core:lib",
-        "@protobuf//:cc_wkt_protos",
+        "@protobuf_archive//:cc_wkt_protos",
     ],
 )
 
@@ -82,6 +90,7 @@ cc_test(
     size = "medium",
     srcs = ["server_core_test.cc"],
     deps = [
+        ":model_platform_types",
         ":server_core",
         "//tensorflow_serving/apis:model_proto",
         "//tensorflow_serving/apis:predict_proto",
@@ -96,8 +105,155 @@ cc_test(
         "//tensorflow_serving/model_servers/test_util:storage_path_error_injecting_source_adapter",
         "//tensorflow_serving/model_servers/test_util:storage_path_error_injecting_source_adapter_proto",
         "//tensorflow_serving/test_util",
+        "@org_tensorflow//tensorflow/core:lib",
+        "@org_tensorflow//tensorflow/core:protos_all_cc",
         "@org_tensorflow//tensorflow/core:test",
-        "@protobuf//:cc_wkt_protos",
+        "@protobuf_archive//:cc_wkt_protos",
+    ],
+)
+
+cc_library(
+    name = "get_model_status_impl",
+    srcs = ["get_model_status_impl.cc"],
+    hdrs = ["get_model_status_impl.h"],
+    visibility = [
+        "//visibility:public",
+    ],
+    deps = [
+        ":server_core",
+        "//tensorflow_serving/apis:get_model_status_proto",
+        "//tensorflow_serving/core:servable_state",
+        "//tensorflow_serving/core:servable_state_monitor",
+        "//tensorflow_serving/util:status_proto",
+        "//tensorflow_serving/util:status_util",
+        "@org_tensorflow//tensorflow/core:lib",
+    ],
+)
+
+cc_test(
+    name = "get_model_status_impl_test",
+    size = "medium",
+    srcs = ["get_model_status_impl_test.cc"],
+    data = [
+        "//tensorflow_serving/servables/tensorflow/testdata:saved_model_half_plus_two_2_versions",
+    ],
+    deps = [
+        ":get_model_status_impl",
+        ":model_platform_types",
+        ":platform_config_util",
+        ":server_core",
+        "//tensorflow_serving/apis:model_proto",
+        "//tensorflow_serving/core:availability_preserving_policy",
+        "//tensorflow_serving/core/test_util:test_main",
+        "//tensorflow_serving/servables/tensorflow:saved_model_bundle_source_adapter_proto",
+        "//tensorflow_serving/servables/tensorflow:session_bundle_config_proto",
+        "//tensorflow_serving/servables/tensorflow:session_bundle_source_adapter_proto",
+        "//tensorflow_serving/test_util",
+        "@org_tensorflow//tensorflow/cc/saved_model:loader",
+        "@org_tensorflow//tensorflow/cc/saved_model:signature_constants",
+        "@org_tensorflow//tensorflow/contrib/session_bundle",
+        "@org_tensorflow//tensorflow/core:test",
+    ],
+)
+
+cc_test(
+    name = "http_rest_prediction_handler_test",
+    size = "medium",
+    srcs = ["http_rest_prediction_handler_test.cc"],
+    data = ["@org_tensorflow//tensorflow/cc/saved_model:saved_model_half_plus_two"],
+    deps = [
+        ":http_rest_prediction_handler",
+        ":model_platform_types",
+        ":platform_config_util",
+        ":server_core",
+        "//tensorflow_serving/core:availability_preserving_policy",
+        "//tensorflow_serving/core/test_util:test_main",
+        "//tensorflow_serving/servables/tensorflow:saved_model_bundle_source_adapter_proto",
+        "//tensorflow_serving/servables/tensorflow:session_bundle_config_proto",
+        "//tensorflow_serving/servables/tensorflow:session_bundle_source_adapter_proto",
+        "//tensorflow_serving/test_util",
+        "@com_github_tencent_rapidjson//:rapidjson",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/time",
+        "@com_googlesource_code_re2//:re2",
+        "@org_tensorflow//tensorflow/cc/saved_model:loader",
+        "@org_tensorflow//tensorflow/cc/saved_model:signature_constants",
+        "@org_tensorflow//tensorflow/core:lib",
+        "@org_tensorflow//tensorflow/core:test",
+    ],
+)
+
+cc_library(
+    name = "model_service_impl",
+    srcs = ["model_service_impl.cc"],
+    hdrs = ["model_service_impl.h"],
+    visibility = [
+        "//visibility:public",
+    ],
+    deps = [
+        ":get_model_status_impl",
+        ":grpc_status_util",
+        ":server_core",
+        "//tensorflow_serving/apis:model_management_proto",
+        "//tensorflow_serving/apis:model_service_proto",
+        "//tensorflow_serving/util:status_util",
+        "@grpc//:grpc++_unsecure",
+    ],
+)
+
+cc_library(
+    name = "grpc_status_util",
+    srcs = ["grpc_status_util.cc"],
+    hdrs = ["grpc_status_util.h"],
+    visibility = [
+        "//visibility:public",
+    ],
+    deps = [
+        "@grpc//:grpc++_unsecure",
+        "@org_tensorflow//tensorflow/core:lib",
+    ],
+)
+
+cc_library(
+    name = "http_server",
+    srcs = ["http_server.cc"],
+    hdrs = ["http_server.h"],
+    visibility = ["//tensorflow_serving:internal"],
+    deps = [
+        ":http_rest_prediction_handler",
+        ":server_core",
+        "//tensorflow_serving/util:threadpool_executor",
+        "//tensorflow_serving/util/net_http/server/public:http_server",
+        "//tensorflow_serving/util/net_http/server/public:http_server_api",
+        "@com_google_absl//absl/memory",
+        "@com_google_absl//absl/strings",
+        "@com_googlesource_code_re2//:re2",
+        "@org_tensorflow//tensorflow/core:lib",
+    ],
+)
+
+cc_library(
+    name = "http_rest_prediction_handler",
+    srcs = ["http_rest_prediction_handler.cc"],
+    hdrs = ["http_rest_prediction_handler.h"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":server_core",
+        "//tensorflow_serving/apis:model_proto",
+        "//tensorflow_serving/apis:predict_proto",
+        "//tensorflow_serving/core:servable_handle",
+        "//tensorflow_serving/servables/tensorflow:classification_service",
+        "//tensorflow_serving/servables/tensorflow:predict_impl",
+        "//tensorflow_serving/servables/tensorflow:regression_service",
+        "//tensorflow_serving/util:json_tensor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/time",
+        "@com_google_absl//absl/types:optional",
+        "@com_googlesource_code_re2//:re2",
+        "@org_tensorflow//tensorflow/cc/saved_model:loader",
+        "@org_tensorflow//tensorflow/cc/saved_model:signature_constants",
+        "@org_tensorflow//tensorflow/core:lib",
+        "@org_tensorflow//tensorflow/core:protos_all_cc",
     ],
 )
 
@@ -117,25 +273,44 @@ TENSORFLOW_DEPS = [
     "//tensorflow_serving/servables/tensorflow:predict_impl",
 ]
 
-cc_binary(
-    name = "tensorflow_model_server",
+cc_library(
+    name = "tensorflow_model_server_main_lib",
     srcs = [
         "main.cc",
     ],
-    visibility = ["//tensorflow_serving:internal"],
+    visibility = [
+        ":tensorflow_model_server_custom_op_clients",
+        "//tensorflow_serving:internal",
+    ],
     deps = [
+        ":http_server",
         ":model_platform_types",
         ":platform_config_util",
         ":server_core",
-        "@protobuf//:cc_wkt_protos",
+        ":grpc_status_util",
+        ":model_service_impl",
+        "@protobuf_archive//:cc_wkt_protos",
+        "@org_tensorflow//tensorflow/cc/saved_model:tag_constants",
         "@org_tensorflow//tensorflow/core:lib",
         "@org_tensorflow//tensorflow/core/platform/cloud:gcs_file_system",
         "@org_tensorflow//tensorflow/core/platform/hadoop:hadoop_file_system",
+        "@org_tensorflow//tensorflow/core/platform/s3:s3_file_system",
+        "@org_tensorflow//tensorflow/core:protos_all_cc",
         "//tensorflow_serving/apis:prediction_service_proto",
         "//tensorflow_serving/config:model_server_config_proto",
         "//tensorflow_serving/core:availability_preserving_policy",
-        "@grpc//:grpc++",
+        "//tensorflow_serving/servables/tensorflow:multi_inference_helper",
+        "@grpc//:grpc++_unsecure",
+        "//tensorflow_serving/servables/tensorflow:session_bundle_config_proto",
     ] + TENSORFLOW_DEPS + SUPPORTED_TENSORFLOW_OPS,
+)
+
+cc_binary(
+    name = "tensorflow_model_server",
+    visibility = ["//tensorflow_serving:internal"],
+    deps = [
+        ":tensorflow_model_server_main_lib",
+    ],
 )
 
 py_test(
@@ -158,9 +333,8 @@ py_test(
         "//tensorflow_serving/servables/tensorflow/testdata:saved_model_half_plus_three/00000123/variables/variables.index",
         "@org_tensorflow//tensorflow/cc/saved_model:saved_model_half_plus_two",
     ],
-    # TODO(b/36008812): Remove this tag.
-    tags = ["manual"],
     deps = [
+        "//tensorflow_serving/apis:model_service_proto_py_pb2",
         "//tensorflow_serving/apis:prediction_service_proto_py_pb2",
         "@org_tensorflow//tensorflow:tensorflow_py",
     ],
@@ -169,8 +343,41 @@ py_test(
 py_binary(
     name = "tensorflow_model_server_test_client",
     srcs = ["tensorflow_model_server_test_client.py"],
+    srcs_version = "PY2AND3",
     deps = [
         "//tensorflow_serving/apis:prediction_service_proto_py_pb2",
         "@org_tensorflow//tensorflow:tensorflow_py",
     ],
+)
+
+load("@bazel_tools//tools/build_defs/pkg:pkg.bzl", "pkg_deb", "pkg_tar")
+
+pkg_tar(
+    name = "tensorflow_model_server_tar",
+    srcs = [
+        ":tensorflow_model_server",
+    ],
+    package_dir = "/usr/bin",
+)
+
+# Build with '-c opt --copt=-mavx --copt=-msse4.2'
+pkg_deb(
+    name = "tensorflow_model_server_deb",
+    data = ":tensorflow_model_server_tar",
+    description = "TensorFlow Serving ModelServer",
+    homepage = "https://github.com/tensorflow/serving",
+    maintainer = "TensorFlow Serving team",
+    package = "tensorflow-model-server",
+    version = "undefined",  # Set when releasing a new version of TensorFlow Serving (e.g. 1.0.0).
+)
+
+# Build with '-c opt'
+pkg_deb(
+    name = "tensorflow_model_server_universal_deb",
+    data = ":tensorflow_model_server_tar",
+    description = "TensorFlow Serving ModelServer",
+    homepage = "https://github.com/tensorflow/serving",
+    maintainer = "TensorFlow Serving team",
+    package = "tensorflow-model-server-universal",
+    version = "undefined",  # Set when releasing a new version of TensorFlow Serving (e.g. 1.0.0).
 )

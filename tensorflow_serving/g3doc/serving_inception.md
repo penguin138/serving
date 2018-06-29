@@ -9,7 +9,7 @@ To learn more about TensorFlow Serving, we recommend
 [TensorFlow Serving advanced tutorial](serving_advanced.md).
 
 To learn more about TensorFlow Inception model, we recommend
-[Inception in TensorFlow](https://github.com/tensorflow/models/tree/master/inception).
+[Inception in TensorFlow](https://github.com/tensorflow/models/tree/master/research/inception).
 
 -   [Part 0](#part_0_create_a_docker_image) shows how to create a TensorFlow
     Serving Docker image for deployment
@@ -35,21 +35,31 @@ $ docker run --name=inception_container -it $USER/tensorflow-serving-devel
 
 ### Clone, configure, and build TensorFlow Serving in a container
 
-In the running container, we clone, configure and build TensorFlow Serving.
-Then test run [tensorflow_model_server](https://github.com/tensorflow/serving/tree/master/tensorflow_serving/model_servers/main.cc).
+Note: All `bazel build` commands below use the standard `-c opt` flag. To
+further optimize the build, refer to the
+[instructions here](setup.md#optimized).
+
+In the running container, we clone, configure and build TensorFlow Serving
+example code.
 
 ```shell
-root@c97d8e820ced:/# git clone --recurse-submodules https://github.com/tensorflow/serving
-root@c97d8e820ced:/# cd serving/tensorflow
-root@c97d8e820ced:/serving/tensorflow# ./configure
-root@c97d8e820ced:/serving# cd ..
-root@c97d8e820ced:/serving# bazel build -c opt tensorflow_serving/...
-root@c97d8e820ced:/serving# ls
-AUTHORS          LICENSE    RELEASE.md  bazel-bin       bazel-out      bazel-testlogs  tensorflow          zlib.BUILD
-CONTRIBUTING.md  README.md  WORKSPACE   bazel-genfiles  bazel-serving  grpc            tensorflow_serving
-root@c97d8e820ced:/serving# bazel-bin/tensorflow_serving/model_servers/tensorflow_model_server
-Usage: model_server [--port=8500] [--enable_batching] [--model_name=my_name] --model_base_path=/path/to/export
+root@c97d8e820ced:/# git clone -b r1.6 https://github.com/tensorflow/serving
+root@c97d8e820ced:/# cd serving
+root@c97d8e820ced:/serving# bazel build -c opt tensorflow_serving/example/...
 ```
+
+Next we can either install a TensorFlow ModelServer with apt-get using the
+[instructions here](setup.md#aptget), or build a ModelServer binary using:
+
+```shell
+root@c97d8e820ced:/serving# bazel build -c opt tensorflow_serving/model_servers:tensorflow_model_server
+```
+
+The rest of this tutorial assumes you compiled the ModelServer locally, in which
+case the command to run it is
+`bazel-bin/tensorflow_serving/model_servers/tensorflow_model_server`. If however
+you installed the ModelServer using apt-get, simply replace that command with
+`tensorflow_model_server`.
 
 ### Export Inception model in container
 
@@ -66,10 +76,10 @@ root@c97d8e820ced:/serving# curl -O http://download.tensorflow.org/models/image/
 root@c97d8e820ced:/serving# tar xzf inception-v3-2016-03-01.tar.gz
 root@c97d8e820ced:/serving# ls inception-v3
 README.txt  checkpoint  model.ckpt-157585
-root@c97d8e820ced:/serving# bazel-bin/tensorflow_serving/example/inception_saved_model --checkpoint_dir=inception-v3 --output_dir=inception-export
+root@c97d8e820ced:/serving# bazel-bin/tensorflow_serving/example/inception_saved_model --checkpoint_dir=inception-v3 --output_dir=/tmp/inception-export
 Successfully loaded model from inception-v3/model.ckpt-157585 at step=157585.
-Successfully exported model to inception-export
-root@c97d8e820ced:/serving# ls inception-export
+Successfully exported model to /tmp/inception-export
+root@c97d8e820ced:/serving# ls /tmp/inception-export
 1
 root@c97d8e820ced:/serving# [Ctrl-p] + [Ctrl-q]
 ```
@@ -99,7 +109,7 @@ Run the [gRPC]( http://www.grpc.io/) `tensorflow_model_server` in the container.
 
 ```shell
 root@f07eec53fd95:/# cd serving
-root@f07eec53fd95:/serving# bazel-bin/tensorflow_serving/model_servers/tensorflow_model_server --port=9000 --model_name=inception --model_base_path=inception-export &> inception_log &
+root@f07eec53fd95:/serving# bazel-bin/tensorflow_serving/model_servers/tensorflow_model_server --port=9000 --model_name=inception --model_base_path=/tmp/inception-export &> inception_log &
 [1] 45
 ```
 
@@ -175,8 +185,9 @@ $ gcloud auth login --project tensorflow-serving
 
 ### Create a container cluster
 
-First we create a [Google Container Engine](https://cloud.google.com/container-engine/)
-cluster for service deployment.
+First we create a
+[Google Kubernetes Engine](https://cloud.google.com/container-engine/) cluster
+for service deployment.
 
 ```shell
 $ gcloud container clusters create inception-serving-cluster --num-nodes 5

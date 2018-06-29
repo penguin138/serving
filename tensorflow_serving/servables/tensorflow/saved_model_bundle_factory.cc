@@ -17,6 +17,7 @@ limitations under the License.
 
 #include "tensorflow/cc/saved_model/tag_constants.h"
 #include "tensorflow/contrib/session_bundle/bundle_shim.h"
+#include "tensorflow/core/framework/tensor.pb.h"
 #include "tensorflow/core/lib/core/errors.h"
 #include "tensorflow/core/protobuf/config.pb.h"
 #include "tensorflow/core/protobuf/named_tensor.pb.h"
@@ -77,9 +78,16 @@ Status SavedModelBundleFactory::EstimateResourceRequirement(
 Status SavedModelBundleFactory::CreateSavedModelBundle(
     const string& path, std::unique_ptr<SavedModelBundle>* bundle) {
   bundle->reset(new SavedModelBundle);
+  std::unordered_set<string> saved_model_tags(
+      config_.saved_model_tags().begin(), config_.saved_model_tags().end());
+  // Defaults to loading the meta graph def corresponding to the `serve` tag if
+  // no `saved_model_tags` are specified.
+  if (saved_model_tags.empty()) {
+    saved_model_tags.insert(kSavedModelTagServe);
+  }
   TF_RETURN_IF_ERROR(LoadSessionBundleOrSavedModelBundle(
       GetSessionOptions(config_), GetRunOptions(config_), path,
-      {kSavedModelTagServe}, bundle->get()));
+      saved_model_tags, bundle->get()));
   if (!config_.experimental_fixed_input_tensors().empty()) {
     LOG(INFO) << "Wrapping session to inject fixed input tensors";
     std::vector<std::pair<string, Tensor>> fixed_input_tensors;

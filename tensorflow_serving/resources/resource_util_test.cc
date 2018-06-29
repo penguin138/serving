@@ -887,6 +887,63 @@ TEST_F(ResourceUtilTest, SubtractBoundAndUnbound) {
                                 "} "));
 }
 
+TEST_F(ResourceUtilTest, MultiplyEmpty) {
+  auto base = CreateProto<ResourceAllocation>("");
+  util_.Multiply(2, &base);
+  EXPECT_THAT(base, EqualsProto(""));
+}
+
+TEST_F(ResourceUtilTest, MultiplyBasic) {
+  auto base = CreateProto<ResourceAllocation>(
+      "resource_quantities { "
+      "  resource { "
+      "    device: 'main' "
+      "    device_instance { value: 0 } "
+      "    kind: 'processing' "
+      "  } "
+      "  quantity: 300 "
+      "} "
+      "resource_quantities { "
+      "  resource { "
+      "    device: 'main' "
+      "    device_instance { value: 0 } "
+      "    kind: 'ram' "
+      "  } "
+      "  quantity: 8 "
+      "} "
+      "resource_quantities { "
+      "  resource { "
+      "    device: 'gpu' "
+      "    kind: 'ram' "
+      "  } "
+      "  quantity: 16 "
+      "} ");
+  util_.Multiply(2, &base);
+  EXPECT_THAT(base, EqualsProto("resource_quantities { "
+                                "  resource { "
+                                "    device: 'main' "
+                                "    device_instance { value: 0 } "
+                                "    kind: 'processing' "
+                                "  } "
+                                "  quantity: 600 "
+                                "} "
+                                "resource_quantities { "
+                                "  resource { "
+                                "    device: 'main' "
+                                "    device_instance { value: 0 } "
+                                "    kind: 'ram' "
+                                "  } "
+                                "  quantity: 16 "
+                                "} "
+                                "resource_quantities { "
+                                "  resource { "
+                                "    device: 'gpu' "
+                                "    kind: 'ram' "
+                                "  } "
+                                "  quantity: 32 "
+                                "} "));
+}
+
 TEST_F(ResourceUtilTest, Equal) {
   const std::vector<ResourceAllocation> values = {
       CreateProto<ResourceAllocation>(""),
@@ -1436,6 +1493,183 @@ TEST_F(ResourceUtilTest, Overbind) {
                           "} "));
 }
 
+TEST_F(ResourceUtilTest, MaxEmpty) {
+  const auto lhs = CreateProto<ResourceAllocation>("");
+  const auto rhs = CreateProto<ResourceAllocation>("");
+  EXPECT_THAT(util_.Max(lhs, rhs), EqualsProto(""));
+}
+
+TEST_F(ResourceUtilTest, MaxBound) {
+  const auto lhs = CreateProto<ResourceAllocation>(
+      "resource_quantities { "
+      "  resource { "
+      "    device: 'main' "
+      "    device_instance { value: 0 } "
+      "    kind: 'processing' "
+      "  } "
+      "  quantity: 100 "
+      "} "
+      "resource_quantities { "
+      "  resource { "
+      "    device: 'main' "
+      "    device_instance { value: 0 } "
+      "    kind: 'ram' "
+      "  } "
+      "  quantity: 8 "
+      "} ");
+  const auto rhs = CreateProto<ResourceAllocation>(
+      "resource_quantities { "
+      "  resource { "
+      "    device: 'main' "
+      "    device_instance { value: 0 } "
+      "    kind: 'processing' "
+      "  } "
+      "  quantity: 300 "
+      "} "
+      "resource_quantities { "
+      "  resource { "
+      "    device: 'gpu' "
+      "    device_instance { value: 0 } "
+      "    kind: 'ram' "
+      "  } "
+      "  quantity: 4 "
+      "} ");
+  EXPECT_THAT(util_.Max(lhs, rhs),
+              EqualsProto("resource_quantities { "
+                          "  resource { "
+                          "    device: 'main' "
+                          "    device_instance { value: 0 } "
+                          "    kind: 'processing' "
+                          "  } "
+                          "  quantity: 300 "
+                          "} "
+                          "resource_quantities { "
+                          "  resource { "
+                          "    device: 'gpu' "
+                          "    device_instance { value: 0 } "
+                          "    kind: 'ram' "
+                          "  } "
+                          "  quantity: 4 "
+                          "} "
+                          "resource_quantities { "
+                          "  resource { "
+                          "    device: 'main' "
+                          "    device_instance { value: 0 } "
+                          "    kind: 'ram' "
+                          "  } "
+                          "  quantity: 8 "
+                          "} "));
+}
+
+TEST_F(ResourceUtilTest, MaxBoundAndUnbound) {
+  const auto lhs = CreateProto<ResourceAllocation>(
+      "resource_quantities { "
+      "  resource { "
+      "    device: 'main' "
+      "    device_instance { value: 0 } "
+      "    kind: 'processing' "
+      "  } "
+      "  quantity: 100 "
+      "} "
+      "resource_quantities { "
+      "  resource { "
+      "    device: 'gpu' "
+      "    kind: 'ram' "
+      "  } "
+      "  quantity: 8 "
+      "} ");
+  const auto rhs = CreateProto<ResourceAllocation>(
+      "resource_quantities { "
+      "  resource { "
+      "    device: 'main' "
+      "    device_instance { value: 0 } "
+      "    kind: 'processing' "
+      "  } "
+      "  quantity: 300 "
+      "} "
+      "resource_quantities { "
+      "  resource { "
+      "    device: 'gpu' "
+      "    device_instance { value: 0 } "
+      "    kind: 'ram' "
+      "  } "
+      "  quantity: 4 "
+      "} ");
+  EXPECT_THAT(util_.Max(lhs, rhs),
+              EqualsProto("resource_quantities { "
+                          "  resource { "
+                          "    device: 'main' "
+                          "    device_instance { value: 0 } "
+                          "    kind: 'processing' "
+                          "  } "
+                          "  quantity: 300 "
+                          "} "
+                          "resource_quantities { "
+                          "  resource { "
+                          "    device: 'gpu' "
+                          "    device_instance { value: 0 } "
+                          "    kind: 'ram' "
+                          "  } "
+                          "  quantity: 4 "
+                          "} "
+                          "resource_quantities { "
+                          "  resource { "
+                          "    device: 'gpu' "
+                          "    kind: 'ram' "
+                          "  } "
+                          "  quantity: 8 "
+                          "} "));
+}
+
+TEST_F(ResourceUtilTest, MaxUnbound) {
+  const auto lhs = CreateProto<ResourceAllocation>(
+      "resource_quantities { "
+      "  resource { "
+      "    device: 'main' "
+      "    kind: 'processing' "
+      "  } "
+      "  quantity: 100 "
+      "} "
+      "resource_quantities { "
+      "  resource { "
+      "    device: 'main' "
+      "    kind: 'ram' "
+      "  } "
+      "  quantity: 8 "
+      "} ");
+  const auto rhs = CreateProto<ResourceAllocation>(
+      "resource_quantities { "
+      "  resource { "
+      "    device: 'main' "
+      "    kind: 'processing' "
+      "  } "
+      "  quantity: 300 "
+      "} "
+      "resource_quantities { "
+      "  resource { "
+      "    device: 'main' "
+      "    kind: 'ram' "
+      "  } "
+      "  quantity: 4 "
+      "} ");
+  EXPECT_THAT(util_.Max(lhs, rhs),
+              EqualsProto("resource_quantities { "
+                          "  resource { "
+                          "    device: 'main' "
+                          "    device_instance { value: 0 } "
+                          "    kind: 'processing' "
+                          "  } "
+                          "  quantity: 300 "
+                          "} "
+                          "resource_quantities { "
+                          "  resource { "
+                          "    device: 'main' "
+                          "    device_instance { value: 0 } "
+                          "    kind: 'ram' "
+                          "   } "
+                          "   quantity: 8 "
+                          "} "));
+}
 }  // namespace
 }  // namespace serving
 }  // namespace tensorflow

@@ -22,7 +22,6 @@ limitations under the License.
 #include <type_traits>
 
 #include "tensorflow_serving/core/loader.h"
-#include "tensorflow_serving/core/servable_handle.h"
 #include "tensorflow_serving/util/any_ptr.h"
 
 namespace tensorflow {
@@ -57,19 +56,21 @@ class UntypedServableHandle {
 /// Using a pointer type for T will fail to compile, since it would be a mistake
 /// to do so in most situations.
 ///
-/// Example Use:
-///  // Define or use an existing servable:
-///  class MyServable {
-///   public:
-///    void MyMethod();
-///  };
+/// Example use:
 ///
-///  // Get your handle from a manager.
-///  ServableHandle<MyServable> handle;
-///  TF_RETURN_IF_ERROR(manager->GetServableHandle(id, &handle));
+///     // Define or use an existing servable:
+///     class MyServable {
+///     public:
+///       void MyMethod();
+///     };
 ///
-///  // Use your handle as a smart-pointer:
-///  handle->MyMethod();
+///     // Get your handle from a manager.
+///     ServableHandle<MyServable> handle;
+///     TF_RETURN_IF_ERROR(manager->GetServableHandle(id, &handle));
+///
+///     // Use your handle as a smart-pointer:
+///     handle->MyMethod();
+///
 template <typename T>
 class ServableHandle {
  public:

@@ -24,6 +24,7 @@ limitations under the License.
 #include "tensorflow_serving/apis/classifier.h"
 #include "tensorflow_serving/core/servable_handle.h"
 #include "tensorflow_serving/servables/tensorflow/classifier.h"
+#include "tensorflow_serving/servables/tensorflow/util.h"
 
 namespace tensorflow {
 namespace serving {
@@ -41,16 +42,9 @@ Status TensorflowClassificationServiceImpl::Classify(
   ServableHandle<SavedModelBundle> saved_model_bundle;
   TF_RETURN_IF_ERROR(
       core->GetServableHandle(request.model_spec(), &saved_model_bundle));
-  SignatureDef signature;
-  TF_RETURN_IF_ERROR(GetClassificationSignatureDef(
-      request.model_spec(), saved_model_bundle->meta_graph_def, &signature));
-
-  std::unique_ptr<ClassifierInterface> classifier_interface;
-  TF_RETURN_IF_ERROR(CreateFlyweightTensorFlowClassifier(
-      run_options, saved_model_bundle->session.get(), &signature,
-      &classifier_interface));
-  // Run classification.
-  return classifier_interface->Classify(request, response->mutable_result());
+  return RunClassify(run_options, saved_model_bundle->meta_graph_def,
+                     saved_model_bundle.id().version,
+                     saved_model_bundle->session.get(), request, response);
 }
 
 }  // namespace serving

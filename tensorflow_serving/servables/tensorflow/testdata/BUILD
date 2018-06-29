@@ -23,11 +23,23 @@ filegroup(
     ),
 )
 
+filegroup(
+    name = "saved_model_half_plus_two_2_versions",
+    srcs = glob(
+        ["saved_model_half_plus_two_2_versions/**/*"],
+        exclude = [
+            "**/METADATA",
+            "**/OWNERS",
+        ],
+    ),
+)
+
 py_binary(
     name = "export_half_plus_two",
     srcs = [
         "export_half_plus_two.py",
     ],
+    srcs_version = "PY2AND3",
     deps = [
         "@org_tensorflow//tensorflow:tensorflow_py",
         "@org_tensorflow//tensorflow/contrib/session_bundle:exporter",
@@ -39,6 +51,18 @@ py_binary(
     srcs = [
         "export_bad_half_plus_two.py",
     ],
+    srcs_version = "PY2AND3",
+    deps = [
+        "@org_tensorflow//tensorflow:tensorflow_py",
+    ],
+)
+
+py_binary(
+    name = "export_counter",
+    srcs = [
+        "export_counter.py",
+    ],
+    srcs_version = "PY2AND3",
     deps = [
         "@org_tensorflow//tensorflow:tensorflow_py",
     ],
@@ -56,6 +80,9 @@ exports_files([
     "saved_model_half_plus_three/00000123/variables/variables.index",
     "bad_half_plus_two/00000123/export",
     "bad_half_plus_two/00000123/export.meta",
+    "saved_model_counter/00000123/saved_model.pb",
+    "saved_model_counter/00000123/variables/variables.data-00000-of-00001",
+    "saved_model_counter/00000123/variables/variables.index",
     "good_model_config.txt",
     "bad_model_config.txt",
     "batching_config.txt",

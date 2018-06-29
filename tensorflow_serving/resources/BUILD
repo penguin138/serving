@@ -26,7 +26,7 @@ serving_proto_library(
     srcs = ["resources.proto"],
     cc_api_version = 2,
     visibility = ["//visibility:public"],
-    deps = ["@protobuf//:cc_wkt_protos"],
+    deps = ["@protobuf_archive//:cc_wkt_protos"],
 )
 
 cc_library(
@@ -57,6 +57,8 @@ cc_test(
         ":resource_util",
         "//tensorflow_serving/core/test_util:test_main",
         "//tensorflow_serving/test_util",
+        "@org_tensorflow//tensorflow/core:lib",
+        "@org_tensorflow//tensorflow/core:test",
     ],
 )
 

@@ -43,8 +43,25 @@ message SessionBundleConfig {
 
   // EXPERIMENTAL. THIS FIELD MAY CHANGE OR GO AWAY. USE WITH CAUTION.
   //
+  // Transient memory used while loading a model, which is released once the
+  // loading phase has completed. (This is on top of the memory used in steady-
+  // state while the model is in memory after it has finished loading.)
+  //
+  // TODO(b/38376838): This is a temporary hack, and it applies to all models.
+  // Remove it once resource estimates are moved inside SavedModel.
+  uint64 experimental_transient_ram_bytes_during_load = 5;
+
+  // Set of SavedModel tags identifying the specific meta graph def to be
+  // loaded.
+  repeated string saved_model_tags = 6;
+
+  // EXPERIMENTAL. THIS FIELD MAY CHANGE OR GO AWAY. USE WITH CAUTION.
+  //
   // Input tensors to append to every Session::Run() call.
   repeated NamedTensorProto experimental_fixed_input_tensors = 778;
+
+  // Enables model warmup.
+  bool enable_model_warmup = 779;
 }
 
 // Batching parameters. Each individual parameter is optional. If omitted, the

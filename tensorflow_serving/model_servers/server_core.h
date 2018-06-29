@@ -24,6 +24,7 @@ limitations under the License.
 
 #include "google/protobuf/any.pb.h"
 #include "tensorflow/core/lib/core/status.h"
+#include "tensorflow/core/platform/cpu_info.h"
 #include "tensorflow/core/platform/macros.h"
 #include "tensorflow/core/platform/mutex.h"
 #include "tensorflow/core/platform/types.h"
@@ -64,6 +65,8 @@ class ServerCoreTestAccess;
 /// ServerCore.
 class ServerCore : public Manager {
  public:
+  using PreLoadHook = AspiredVersionsManager::PreLoadHook;
+
   using ServableStateMonitorCreator =
       std::function<Status(EventBus<ServableState>* event_bus,
                            std::unique_ptr<ServableStateMonitor>* monitor)>;
@@ -85,6 +88,9 @@ class ServerCore : public Manager {
   struct Options {
     // ModelServer configuration.
     ModelServerConfig model_server_config;
+    // Relative (non-absolute) base-paths in model_server_config will
+    // be prepended with model_config_list_root_dir.
+    optional<string> model_config_list_root_dir;
 
     // The AspiredVersionPolicy to use for the manager. Must be non-null.
     std::unique_ptr<AspiredVersionPolicy> aspired_version_policy;
@@ -112,6 +118,17 @@ class ServerCore : public Manager {
     // Time interval between file-system polls, in seconds.
     int32 file_system_poll_wait_seconds = 30;
 
+    // If true, filesystem caches are flushed in the following cases:
+    //
+    // 1) After the initial models are loaded.
+    // 2) After a new config is supplied and a changed set of models are loaded.
+    // 3) After each new model version is loaded, if num_load_threads == 1.
+    //
+    // In the common scenario where the number of load threads is set to 1 after
+    // the initial load, this will take care of flushing the cache once after
+    // the initial load, and after every subsequent load of every model version.
+    bool flush_filesystem_caches = false;
+
     // Configuration for the supported platforms.
     PlatformConfigMap platform_config_map;
 
@@ -128,6 +145,10 @@ class ServerCore : public Manager {
 
     // If set, we use this function to update the server_request_logger.
     ServerRequestLoggerUpdater server_request_logger_updater;
+
+    // Callback to be called just before a servable is to be loaded. This will
+    // called on the same manager load thread which starts the load.
+    PreLoadHook pre_load_hook;
   };
 
   virtual ~ServerCore() = default;
@@ -157,7 +178,7 @@ class ServerCore : public Manager {
       LOCKS_EXCLUDED(config_mu_);
 
   /// Returns ServableStateMonitor that can be used to query servable states.
-  virtual const ServableStateMonitor* servable_state_monitor() const {
+  virtual ServableStateMonitor* servable_state_monitor() const {
     return servable_state_monitor_.get();
   }
 
@@ -292,7 +313,9 @@ class ServerCore : public Manager {
   Status AddModelsViaCustomModelConfig() EXCLUSIVE_LOCKS_REQUIRED(config_mu_);
 
   // Updates the ServerRequestLogger based on the ModelConfigList.
-  Status MaybeUpdateServerRequestLogger() EXCLUSIVE_LOCKS_REQUIRED(config_mu_);
+  Status MaybeUpdateServerRequestLogger(
+      ModelServerConfig::ConfigCase config_case)
+      EXCLUSIVE_LOCKS_REQUIRED(config_mu_);
 
   // ************************************************************************
   // Request Processing.

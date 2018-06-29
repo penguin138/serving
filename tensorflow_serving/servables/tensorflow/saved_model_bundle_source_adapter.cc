@@ -21,7 +21,11 @@ limitations under the License.
 #include "tensorflow/core/lib/core/errors.h"
 #include "tensorflow/core/platform/types.h"
 #include "tensorflow_serving/core/simple_loader.h"
+#include "tensorflow_serving/resources/resource_util.h"
+#include "tensorflow_serving/resources/resource_values.h"
 #include "tensorflow_serving/resources/resources.pb.h"
+#include "tensorflow_serving/servables/tensorflow/bundle_factory_util.h"
+#include "tensorflow_serving/servables/tensorflow/saved_model_warmup.h"
 #include "tensorflow_serving/util/optional.h"
 
 namespace tensorflow {
@@ -48,14 +52,42 @@ Status SavedModelBundleSourceAdapter::Convert(const StoragePath& path,
   std::shared_ptr<SavedModelBundleFactory> bundle_factory = bundle_factory_;
   auto servable_creator = [bundle_factory,
                            path](std::unique_ptr<SavedModelBundle>* bundle) {
-    return bundle_factory->CreateSavedModelBundle(path, bundle);
+    TF_RETURN_IF_ERROR(bundle_factory->CreateSavedModelBundle(path, bundle));
+    if (bundle_factory->config().enable_model_warmup()) {
+      return RunSavedModelWarmup(GetRunOptions(bundle_factory->config()), path,
+                                 bundle->get());
+    }
+    return Status::OK();
   };
   auto resource_estimator = [bundle_factory,
                              path](ResourceAllocation* estimate) {
+    TF_RETURN_IF_ERROR(
+        bundle_factory->EstimateResourceRequirement(path, estimate));
+
+    // Add experimental_transient_ram_bytes_during_load.
+    // TODO(b/38376838): Remove once resource estimates are moved inside
+    // SavedModel.
+    ResourceUtil::Options resource_util_options;
+    resource_util_options.devices = {{device_types::kMain, 1}};
+    std::unique_ptr<ResourceUtil> resource_util =
+        std::unique_ptr<ResourceUtil>(new ResourceUtil(resource_util_options));
+    const Resource ram_resource = resource_util->CreateBoundResource(
+        device_types::kMain, resource_kinds::kRamBytes);
+    resource_util->SetQuantity(
+        ram_resource,
+        resource_util->GetQuantity(ram_resource, *estimate) +
+            bundle_factory->config()
+                .experimental_transient_ram_bytes_during_load(),
+        estimate);
+
+    return Status::OK();
+  };
+  auto post_load_resource_estimator = [bundle_factory,
+                                       path](ResourceAllocation* estimate) {
     return bundle_factory->EstimateResourceRequirement(path, estimate);
   };
-  loader->reset(
-      new SimpleLoader<SavedModelBundle>(servable_creator, resource_estimator));
+  loader->reset(new SimpleLoader<SavedModelBundle>(
+      servable_creator, resource_estimator, post_load_resource_estimator));
   return Status::OK();
 }
 

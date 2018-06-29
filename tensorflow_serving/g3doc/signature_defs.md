@@ -54,7 +54,7 @@ constants. Specifically:
     C++](https://github.com/tensorflow/tensorflow/blob/master/tensorflow/cc/saved_model/signature_constants.h).
 
 In addition, SavedModel provides a
-[util](https://github.com/tensorflow/tensorflow/blob/master/tensorflow/python/saved_model/utils.py)
+[util](https://github.com/tensorflow/tensorflow/blob/master/tensorflow/python/saved_model/signature_def_utils.py)
 to help build a signature-def.
 
 ## Sample structures
@@ -70,7 +70,12 @@ The actual contents of the TensorInfo are specific to your graph.
 
 ### Classification SignatureDef
 
-~~~proto
+Classification SignatureDefs support structured calls to TensorFlow Serving's
+Classification API. These prescribe that there must be an `inputs` Tensor, and
+that there are two optional output Tensors: `classes` and `scores`, at least one
+of which must be present.
+
+```proto
 signature_def: {
   key  : "my_classification_signature"
   value: {
@@ -101,11 +106,29 @@ signature_def: {
     method_name: "tensorflow/serving/classify"
   }
 }
-~~~
+```
 
 ### Predict SignatureDef
 
-~~~proto
+Predict SignatureDefs support calls to TensorFlow Serving's Predict API. These
+signatures allow you to flexibly support arbitrarily many input and output
+Tensors. For the example below, the signature `my_prediction_signature` has a
+single logical input Tensor `images` that are mapped to the actual Tensor in
+your graph `x:0`.
+
+Predict SignatureDefs enable portability across models. This means that you can
+swap in different SavedModels, possibly with different underlying Tensor names
+(e.g. instead of `x:0` perhaps you have a new alternate model with a Tensor
+`z:0`), while your clients can stay online continuously querying the old and new
+versions of this model without client-side changes.
+
+Predict SignatureDefs also allow you to add optional additional Tensors to the
+outputs, that you can explicitly query. Let's say that in addition to the output
+key below of `scores`, you also wanted to fetch a pooling layer for debugging or
+other purposes. In that case, you would simply add an additional Tensor with a
+key like `pool` and appropriate value.
+
+```proto
 signature_def: {
   key  : "my_prediction_signature"
   value: {
@@ -128,11 +151,15 @@ signature_def: {
     method_name: "tensorflow/serving/predict"
   }
 }
-~~~
+```
 
 ### Regression SignatureDef
 
-~~~proto
+Regression SignatureDefs support structured calls to TensorFlow Serving's
+Regression API. These prescribe that there must be exactly one `inputs` Tensor,
+and one `outputs` Tensor.
+
+```proto
 signature_def: {
   key  : "my_regression_signature"
   value: {
@@ -155,4 +182,4 @@ signature_def: {
     method_name: "tensorflow/serving/regress"
   }
 }
-~~~
+```

@@ -16,6 +16,7 @@ limitations under the License.
 #ifndef TENSORFLOW_SERVING_CORE_BASIC_MANAGER_H_
 #define TENSORFLOW_SERVING_CORE_BASIC_MANAGER_H_
 
+#include <atomic>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -52,9 +53,9 @@ class BasicManagerTestAccess;
 /// unloading them. The manager accepts servables in the form of Loaders.
 ///
 /// We start managing a servable through one of the ManageServable* methods. You
-/// can go on to load the servable after this by calling LoadServable. Loading
+/// can go on to load the servable after this by calling LoadServable(). Loading
 /// will also make the servable available to serve. Once you decide to unload
-/// it, you can call UnloadServable on it, which will make it unavailable to
+/// it, you can call UnloadServable() on it, which will make it unavailable to
 /// serve, then unload the servable.
 ///
 /// Servables are retained until StopManagingServable() is called. This allows a
@@ -65,8 +66,8 @@ class BasicManagerTestAccess;
 /// only allows loading new servables that fit within the overall resource pool.
 ///
 /// BasicManager can be configured to use a thread-pool to do it's load and
-/// unloads. This makes the {Load,Unload}Servable() methods schedule the
-/// load/unloads rather than executing them synchronously. If there are more
+/// unloads. This makes the LoadServable() and UnloadServable() methods schedule
+/// the load/unloads rather than executing them synchronously. If there are more
 /// pending load/unloads than threads in the thread pool, they are processed in
 /// FIFO order.
 ///
@@ -78,7 +79,7 @@ class BasicManagerTestAccess;
 ///
 /// REQUIRES:
 /// 1. Order of method calls -
-///    ManageServable*() -> LoadServable() -> UnloadServable() ->
+///    ManageServable() (and variants) -> LoadServable() -> UnloadServable() ->
 ///    StopManagingServable().
 /// 2. Do not schedule concurrent load and unloads of the same servable.
 /// 3. Do not call load or unload multiple times on the same servable.
@@ -87,23 +88,26 @@ class BasicManagerTestAccess;
 ///
 /// Example usage:
 ///
-/// const ServableId id = {kServableName, 0};
-/// std::unique_ptr<Loader> loader = ...;
-/// ...
-/// BasicManager manager;
-/// TF_CHECK_OK(manager.ManageServable(
-///     CreateServableData(id, std::move(loader))));
-/// TF_CHECK_OK(manager.LoadServable(id));
+///     const ServableId id = {kServableName, 0};
+///     std::unique_ptr&lt;Loader> loader = ...;
+///     ...
+///     BasicManager manager;
+///     TF_CHECK_OK(manager.ManageServable(
+///       CreateServableData(id, std::move(loader))));
+///     TF_CHECK_OK(manager.LoadServable(id));
 ///
-/// ...
-/// TF_CHECK_OK(manager.GetServableHandle(
-///     ServableRequest::Latest(kServableName), &handle));
-/// ...
+///     ...
+///     TF_CHECK_OK(manager.GetServableHandle(
+///         ServableRequest::Latest(kServableName), &handle));
+///     ...
 ///
-/// TF_CHECK_OK(manager.UnloadServable(id));
-/// TF_CHECK_OK(manager.StopManagingServable(id));
+///     TF_CHECK_OK(manager.UnloadServable(id));
+///     TF_CHECK_OK(manager.StopManagingServable(id));
 class BasicManager : public Manager {
  public:
+  // Type of the callback to be called just before a servable is to be loaded.
+  using PreLoadHook = std::function<void(const ServableId&)>;
+
   /// Config options and pluggable objects that will be used by the
   /// BasicManager.
   struct Options {
@@ -136,8 +140,18 @@ class BasicManager : public Manager {
     // Default: 1 minute.
     int64 load_retry_interval_micros = 1LL * 60 * 1000 * 1000;
 
+    // If true, and there are not multiple load threads, filesystem caches will
+    // be flushed after each servable is loaded. (Cache flush is skipped when
+    // multiple load threads are active, in order to avoid setting back a
+    // concurrent load on another thread.)
+    bool flush_filesystem_caches = false;
+
     // The environment to use for starting threads in the thread-pool.
     Env* env = Env::Default();
+
+    // Callback to be called just before a servable is to be loaded. This will
+    // called on the same manager load thread which starts the load.
+    PreLoadHook pre_load_hook;
   };
   static Status Create(Options options, std::unique_ptr<BasicManager>* manager);
 
@@ -158,7 +172,7 @@ class BasicManager : public Manager {
   ///
   /// Returns an error if given a servable that is already being managed.
   ///
-  /// If 'servable' is in an error state, this method does *not* return an
+  /// If *servable* is in an error state, this method does **not** return an
   /// error. Instead, the manager accepts the servable, puts it in state kError
   /// (with a notification sent to the event bus), and then immediately stops
   /// managing it. This behavior facilitates uniform handling of errors that
@@ -215,7 +229,7 @@ class BasicManager : public Manager {
   using DoneCallback = std::function<void(const Status& status)>;
 
   /// Loads the servable with this id, and updates the serving map too. Calls
-  /// 'done_callback' with ok iff the servable was loaded successfully, else
+  /// *done_callback* with ok iff the servable was loaded successfully, else
   /// returns an error status.
   ///
   /// If using a thread-pool, this method transitions the servable harness to
@@ -223,7 +237,7 @@ class BasicManager : public Manager {
   /// completes the load before returning.
   ///
   /// REQUIRES: This manager should have been managing this servable already,
-  /// for it to be loaded, else we call 'done_callback' with an error status. Do
+  /// for it to be loaded, else we call *done_callback* with an error status. Do
   /// not call this multiple times on the same servable. Only one of those will
   /// succeed and the rest will fail with an error status.
   void LoadServable(const ServableId& id, DoneCallback done_callback);
@@ -237,7 +251,7 @@ class BasicManager : public Manager {
   void CancelLoadServableRetry(const ServableId& id);
 
   /// Unloads the servable with this id, and updates the serving map too. Calls
-  /// 'done_callback' with ok iff the servable was unloaded successfully, else
+  /// *done_callback* with ok iff the servable was unloaded successfully, else
   /// returns an error status.
   ///
   /// If using a thread-pool, this method transitions the servable harness to
@@ -245,7 +259,7 @@ class BasicManager : public Manager {
   /// the unload before returning.
   ///
   /// REQUIRES: This manager should have loaded and made this servable
-  /// available, for it to be unloaded, else calls 'done_callback' with an error
+  /// available, for it to be unloaded, else calls *done_callback* with an error
   /// status. Do not call this multiple times on the same servable. Only one of
   /// those will succeed and the rest will fail with an error status.
   void UnloadServable(const ServableId& id, DoneCallback done_callback);
@@ -256,8 +270,10 @@ class BasicManager : public Manager {
 
   BasicManager(Env* env, uint32 num_load_threads, uint32 num_unload_threads,
                uint32 max_num_load_retries, int64 load_retry_interval_micros,
+               bool flush_filesystem_caches,
                std::unique_ptr<ResourceTracker> resource_tracker,
-               EventBus<ServableState>* servable_event_bus);
+               EventBus<ServableState>* servable_event_bus,
+               PreLoadHook pre_load_hook);
 
   // Starts managing the servable.
   //
@@ -372,8 +388,8 @@ class BasicManager : public Manager {
   // the old thread pool blocks until all threads are done, so it could block
   // for a long time.
   void SetNumLoadThreads(uint32 num_load_threads)
-      LOCKS_EXCLUDED(num_load_threads_mu_);
-  uint32 num_load_threads() const LOCKS_EXCLUDED(num_load_threads_mu_);
+      LOCKS_EXCLUDED(load_executor_mu_);
+  uint32 num_load_threads() const;
 
   // Keys are the servable names.
   // Values are the harnesses for each servable version. The values when
@@ -466,12 +482,14 @@ class BasicManager : public Manager {
 
   Env* const env_;
 
-  // The number of load threads and the associated executor. They can be changed
-  // after instantiation of the manager via SetNumLoadThreads().
-  mutable mutex num_load_threads_mu_;
-  uint32 num_load_threads_ GUARDED_BY(num_load_threads_mu_);
-  // The executor used for executing loads of servables.
-  std::unique_ptr<Executor> load_executor_ GUARDED_BY(num_load_threads_mu_);
+  // The number of load threads. Can be changed after instantiation of the
+  // manager via SetNumLoadThreads().
+  std::atomic<uint32> num_load_threads_;
+  // Whether to flush filesystem caches (if num_load_threads_ == 1)
+  const bool flush_filesystem_caches_ = false;
+  // The executor (and associated mutex) used for executing loads of servables.
+  mutable mutex load_executor_mu_;
+  std::unique_ptr<Executor> load_executor_ GUARDED_BY(load_executor_mu_);
 
   // The executor used for executing unloads of servables. (Unlike for loads,
   // the unload executor is fixed for the lifetime of the manager.)
@@ -490,6 +508,8 @@ class BasicManager : public Manager {
   // Used to wake up threads that are waiting for 'num_ongoing_executions' to
   // decrease.
   condition_variable num_ongoing_load_unload_executions_cv_;
+
+  PreLoadHook pre_load_hook_;
 
   TF_DISALLOW_COPY_AND_ASSIGN(BasicManager);
 };

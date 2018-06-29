@@ -26,10 +26,10 @@ limitations under the License.
 #include "tensorflow/core/lib/strings/str_util.h"
 #include "tensorflow/core/platform/macros.h"
 #include "tensorflow/core/platform/types.h"
+#include "tensorflow_serving/batching/batching_util.h"
 #include "tensorflow_serving/servables/tensorflow/serving_session.h"
 #include "tensorflow_serving/util/cleanup.h"
 #include "tensorflow_serving/util/hash.h"
-#include "tensorflow_serving/batching/batching_util.h"
 #include "tensorflow_serving/util/optional.h"
 
 namespace tensorflow {
@@ -88,7 +88,7 @@ std::vector<std::vector<std::pair<string, Tensor>>> GetTaskInputsVector(
   std::vector<std::vector<std::pair<string, Tensor>>> all_task_inputs;
   for (int i = 0; i < batch.num_tasks(); ++i) {
     const std::vector<std::pair<string, Tensor>>& task_inputs =
-      *batch.task(i).inputs;
+        *batch.task(i).inputs;
     all_task_inputs.push_back(task_inputs);
   }
   return all_task_inputs;
@@ -97,7 +97,7 @@ std::vector<std::vector<std::pair<string, Tensor>>> GetTaskInputsVector(
 // the first (not zeroth) dimension.
 // For example, for shapes [1, 2, 3] and [4, 2, 3] the result is true.
 bool AreShapesEqualExceptZeroDim(const TensorShape& shape1,
-    const TensorShape& shape2) {
+                                 const TensorShape& shape2) {
   if (shape1.dims() != shape2.dims()) {
     return false;
   }
@@ -274,9 +274,15 @@ Status BatchingSession::Run(
   if (batch_scheduler_it == batch_schedulers_.end()) {
     // We have a Run() call that doesn't match one of our batching signatures.
     // Run it in-line.
-    LOG(WARNING) << "Request doesn't match any declared signature. Bypassing "
-                    "batcher. Request signature is: "
-                 << TensorSignatureDebugString(signature);
+    static uint64 last_log_message_secs = 0;
+    uint64 now_secs = Env::Default()->NowSeconds();
+    // The time check is not strictly thread safe, but it doesn't matter.
+    if (now_secs - last_log_message_secs >= 120) {
+      LOG(WARNING) << "Request doesn't match any declared signature. Bypassing "
+                      "batcher. Request signature is: "
+                   << TensorSignatureDebugString(signature);
+      last_log_message_secs = now_secs;
+    }
     return wrapped_->Run(run_options, inputs, output_tensor_names,
                          target_node_names, outputs, run_metadata);
   }
@@ -312,7 +318,7 @@ BatchingSession::BatchingSession(const BatchingSessionOptions& options)
 
 Status BatchingSession::ComputeInputSize(
     const std::vector<std::pair<string, Tensor>>& inputs, size_t* size) const {
-  if (inputs.size() == 0) {
+  if (inputs.empty()) {
     return errors::InvalidArgument(
         "Batching session Run() must have at least one input tensor");
   }
@@ -375,7 +381,11 @@ Status BatchingSession::MergeInputTensors(
   optional<std::map<string, std::vector<int>>> max_dim_sizes;
   if (options_.pad_variable_length_inputs) {
     std::vector<std::vector<std::pair<string, Tensor>>> all_task_inputs =
+<<<<<<< HEAD
       GetTaskInputsVector(batch);
+=======
+        GetTaskInputsVector(batch);
+>>>>>>> upstream/master
     max_dim_sizes = CalculateMaxDimSizes(all_task_inputs);
   }
   // Populate 'tensors_to_merge'.
@@ -397,14 +407,14 @@ Status BatchingSession::MergeInputTensors(
         // (except zeroth dim) when padding is turned off.
         if (i > 0) {  // added at least one task to tensors_to_merge
           TensorShape reference_shape =
-            tensors_to_merge[tensor_name][0].shape();
+              tensors_to_merge[tensor_name][0].shape();
           if (!AreShapesEqualExceptZeroDim(tensor.shape(), reference_shape)) {
             return errors::FailedPrecondition(
-              "Tensors with name '" + tensor_name + "' from different tasks" +
-              " have different shapes and padding is turned off." +
-              "Set pad_variable_length_inputs to true, or ensure that " +
-              "all tensors with the same name" +
-              "have equal dimensions starting with the first dim.");
+                "Tensors with name '" + tensor_name + "' from different tasks" +
+                " have different shapes and padding is turned off." +
+                "Set pad_variable_length_inputs to true, or ensure that " +
+                "all tensors with the same name" +
+                "have equal dimensions starting with the first dim.");
           }
         }
       }
@@ -463,6 +473,7 @@ Status BatchingSession::SplitOutputTensors(
   }
 
   std::vector<int64> task_sizes_plus_optional_padding;
+  task_sizes_plus_optional_padding.reserve(batch->num_tasks());
   for (int i = 0; i < batch->num_tasks(); ++i) {
     task_sizes_plus_optional_padding.push_back(batch->task(i).zeroth_dim_size);
   }

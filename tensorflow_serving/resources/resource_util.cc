@@ -194,6 +194,11 @@ bool ResourceUtil::Subtract(const ResourceAllocation& to_subtract,
   return SubtractNormalized(Normalize(to_subtract), base);
 }
 
+void ResourceUtil::Multiply(uint64 multiplier, ResourceAllocation* base) const {
+  *base = Normalize(*base);
+  return MultiplyNormalized(multiplier, base);
+}
+
 bool ResourceUtil::Equal(const ResourceAllocation& lhs,
                          const ResourceAllocation& rhs) const {
   return EqualNormalized(Normalize(lhs), Normalize(rhs));
@@ -213,6 +218,11 @@ bool ResourceUtil::LessThanOrEqual(const ResourceAllocation& lhs,
 ResourceAllocation ResourceUtil::Overbind(
     const ResourceAllocation& allocation) const {
   return OverbindNormalized(Normalize(allocation));
+}
+
+ResourceAllocation ResourceUtil::Max(const ResourceAllocation& lhs,
+                                     const ResourceAllocation& rhs) const {
+  return MaxNormalized(Normalize(lhs), Normalize(rhs));
 }
 
 bool ResourceUtil::IsBoundNormalized(
@@ -335,10 +345,6 @@ bool ResourceUtil::SubtractNormalized(const ResourceAllocation& to_subtract,
         FindMutableEntry(to_subtract_entry.resource(), base);
     if (base_entry == nullptr ||
         base_entry->quantity() < to_subtract_entry.quantity()) {
-      LOG(ERROR) << "Subtracting\n"
-                 << to_subtract.DebugString() << "from\n"
-                 << base->DebugString()
-                 << "would result in a negative quantity";
       return false;
     }
     const uint64 new_quantity =
@@ -352,6 +358,15 @@ bool ResourceUtil::SubtractNormalized(const ResourceAllocation& to_subtract,
   }
   *base = Normalize(*base);
   return true;
+}
+
+void ResourceUtil::MultiplyNormalized(uint64 multiplier,
+                                      ResourceAllocation* base) const {
+  DCHECK(IsNormalized(*base));
+  for (int i = 0; i < base->resource_quantities().size(); ++i) {
+    ResourceAllocation::Entry* entry = base->mutable_resource_quantities(i);
+    entry->set_quantity(entry->quantity() * multiplier);
+  }
 }
 
 bool ResourceUtil::EqualNormalized(const ResourceAllocation& lhs,
@@ -475,6 +490,22 @@ ResourceAllocation ResourceUtil::OverbindNormalized(
   }
   DCHECK(IsNormalized(result));
   return result;
+}
+
+ResourceAllocation ResourceUtil::MaxNormalized(
+    const ResourceAllocation& lhs, const ResourceAllocation& rhs) const {
+  DCHECK(IsNormalized(lhs));
+  DCHECK(IsNormalized(rhs));
+
+  ResourceAllocation max_resource_allocation = rhs;
+  for (const ResourceAllocation::Entry& lhs_entry : lhs.resource_quantities()) {
+    ResourceAllocation::Entry* max_entry = FindOrInsertMutableEntry(
+        lhs_entry.resource(), &max_resource_allocation);
+    if (lhs_entry.quantity() >= max_entry->quantity()) {
+      max_entry->set_quantity(lhs_entry.quantity());
+    }
+  }
+  return max_resource_allocation;
 }
 
 }  // namespace serving

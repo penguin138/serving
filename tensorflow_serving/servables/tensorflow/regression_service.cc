@@ -22,6 +22,7 @@ limitations under the License.
 #include "tensorflow_serving/apis/regressor.h"
 #include "tensorflow_serving/core/servable_handle.h"
 #include "tensorflow_serving/servables/tensorflow/regressor.h"
+#include "tensorflow_serving/servables/tensorflow/util.h"
 
 namespace tensorflow {
 namespace serving {
@@ -39,16 +40,9 @@ Status TensorflowRegressionServiceImpl::Regress(
   ServableHandle<SavedModelBundle> saved_model_bundle;
   TF_RETURN_IF_ERROR(
       core->GetServableHandle(request.model_spec(), &saved_model_bundle));
-  SignatureDef signature;
-  TF_RETURN_IF_ERROR(GetRegressionSignatureDef(
-      request.model_spec(), saved_model_bundle->meta_graph_def, &signature));
-
-  std::unique_ptr<RegressorInterface> regressor_interface;
-  TF_RETURN_IF_ERROR(CreateFlyweightTensorFlowRegressor(
-      run_options, saved_model_bundle->session.get(), &signature,
-      &regressor_interface));
-  // Run regression
-  return regressor_interface->Regress(request, response->mutable_result());
+  return RunRegress(run_options, saved_model_bundle->meta_graph_def,
+                    saved_model_bundle.id().version,
+                    saved_model_bundle->session.get(), request, response);
 }
 
 }  // namespace serving

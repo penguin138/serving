@@ -15,17 +15,34 @@ limitations under the License.
 
 #include "tensorflow_serving/servables/tensorflow/util.h"
 
+#include "google/protobuf/wrappers.pb.h"
+#include "tensorflow/cc/saved_model/signature_constants.h"
 #include "tensorflow/core/example/example.pb.h"
 #include "tensorflow/core/lib/core/errors.h"
 #include "tensorflow/core/lib/core/status.h"
+#include "tensorflow/core/lib/monitoring/counter.h"
+#include "tensorflow/core/lib/monitoring/sampler.h"
 #include "tensorflow/core/lib/strings/strcat.h"
 #include "tensorflow/core/platform/types.h"
 #include "tensorflow_serving/apis/input.pb.h"
 #include "tensorflow_serving/apis/internal/serialized_input.pb.h"
+#include "tensorflow_serving/apis/model.pb.h"
+#include "tensorflow_serving/util/optional.h"
 
 namespace tensorflow {
 namespace serving {
 namespace {
+
+auto* example_counts = monitoring::Sampler<1>::New(
+    {"/tensorflow/serving/request_example_counts",
+     "The number of tensorflow.Examples per request.", "model"},
+    // It's 15 buckets with the last bucket being 2^14 to DBL_MAX;
+    // so the limits are [1, 2, 4, 8, ..., 16 * 1024, DBL_MAX].
+    monitoring::Buckets::Exponential(1, 2, 15));
+
+auto* example_count_total = monitoring::Counter<1>::New(
+    "/tensorflow/serving/request_example_count_total",
+    "The total number of tensorflow.Examples.", "model");
 
 // Returns the number of examples in the Input.
 int NumInputExamples(const internal::SerializedInput& input) {
@@ -39,7 +56,21 @@ int NumInputExamples(const internal::SerializedInput& input) {
   }
   return 0;
 }
+
 }  // namespace
+
+namespace internal {
+
+monitoring::Sampler<1>* GetExampleCounts() { return example_counts; }
+
+monitoring::Counter<1>* GetExampleCountTotal() { return example_count_total; }
+
+}  // namespace internal
+
+void RecordRequestExampleCount(const string& model_name, size_t count) {
+  example_counts->GetCell(model_name)->Add(count);
+  example_count_total->GetCell(model_name)->IncrementBy(count);
+}
 
 Status InputToSerializedExampleTensor(const Input& input, Tensor* examples) {
   const string serialized_input_str = input.SerializeAsString();
@@ -99,6 +130,21 @@ Status PerformOneShotTensorComputation(
   RunMetadata run_metadata;
   return session->Run(run_options, {{input_tensor_name, input_tensor}},
                       output_tensor_names, {}, outputs, &run_metadata);
+}
+
+void MakeModelSpec(const string& model_name,
+                   const optional<string>& signature_name,
+                   const optional<int64>& version, ModelSpec* model_spec) {
+  model_spec->Clear();
+  model_spec->set_name(model_name);
+  if (signature_name) {
+    model_spec->set_signature_name(signature_name->empty()
+                                       ? kDefaultServingSignatureDefKey
+                                       : *signature_name);
+  }
+  if (version) {
+    model_spec->mutable_version()->set_value(*version);
+  }
 }
 
 }  // namespace serving

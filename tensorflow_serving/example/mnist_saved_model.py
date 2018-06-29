@@ -14,15 +14,18 @@
 # ==============================================================================
 
 #!/usr/bin/env python2.7
-"""Train and export a simple Softmax Regression TensorFlow model.
+r"""Train and export a simple Softmax Regression TensorFlow model.
 
 The model is from the TensorFlow "MNIST For ML Beginner" tutorial. This program
 simply follows all its training instructions, and uses TensorFlow SavedModel to
 export the trained model with proper signatures that can be loaded by standard
 tensorflow_model_server.
 
-Usage: mnist_export.py [--training_iteration=x] [--model_version=y] export_dir
+Usage: mnist_saved_model.py [--training_iteration=x] [--model_version=y] \
+    export_dir
 """
+
+from __future__ import print_function
 
 import os
 import sys
@@ -31,7 +34,7 @@ import sys
 
 import tensorflow as tf
 
-from tensorflow_serving.example import mnist_input_data
+import mnist_input_data
 
 tf.app.flags.DEFINE_integer('training_iteration', 1000,
                             'number of training iterations.')
@@ -46,14 +49,14 @@ def main(_):
           '[--model_version=y] export_dir')
     sys.exit(-1)
   if FLAGS.training_iteration <= 0:
-    print 'Please specify a positive value for training iteration.'
+    print('Please specify a positive value for training iteration.')
     sys.exit(-1)
   if FLAGS.model_version <= 0:
-    print 'Please specify a positive value for version number.'
+    print('Please specify a positive value for version number.')
     sys.exit(-1)
 
   # Train model
-  print 'Training model...'
+  print('Training model...')
   mnist = mnist_input_data.read_data_sets(FLAGS.work_dir, one_hot=True)
   sess = tf.InteractiveSession()
   serialized_tf_example = tf.placeholder(tf.string, name='tf_example')
@@ -76,10 +79,12 @@ def main(_):
     train_step.run(feed_dict={x: batch[0], y_: batch[1]})
   correct_prediction = tf.equal(tf.argmax(y, 1), tf.argmax(y_, 1))
   accuracy = tf.reduce_mean(tf.cast(correct_prediction, 'float'))
-  print 'training accuracy %g' % sess.run(
-      accuracy, feed_dict={x: mnist.test.images,
-                           y_: mnist.test.labels})
-  print 'Done training!'
+  print('training accuracy %g' % sess.run(
+      accuracy, feed_dict={
+          x: mnist.test.images,
+          y_: mnist.test.labels
+      }))
+  print('Done training!')
 
   # Export model
   # WARNING(break-tutorial-inline-code): The following code snippet is
@@ -89,7 +94,7 @@ def main(_):
   export_path = os.path.join(
       tf.compat.as_bytes(export_path_base),
       tf.compat.as_bytes(str(FLAGS.model_version)))
-  print 'Exporting trained model to', export_path
+  print('Exporting trained model to', export_path)
   builder = tf.saved_model.builder.SavedModelBuilder(export_path)
 
   # Build the signature_def_map.
@@ -135,7 +140,7 @@ def main(_):
 
   builder.save()
 
-  print 'Done exporting!'
+  print('Done exporting!')
 
 
 if __name__ == '__main__':
